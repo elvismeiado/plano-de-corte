@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MOBPRO - Visualizador de Peça</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #f8fafc; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        #info-panel { position: absolute; bottom: 0; left: 0; width: 100%; background: white; padding: 15px; border-top: 1px solid #e2e8f0; box-sizing: border-box; box-shadow: 0 -4px 10px rgba(0,0,0,0.05); z-index: 10; border-radius: 15px 15px 0 0; }
+        .title { font-size: 18px; font-weight: 900; color: #0f172a; margin-bottom: 5px; }
+        .dim { font-size: 14px; font-weight: 700; color: #0ea5e9; margin-bottom: 10px; }
+        .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+        .badge { background: #e2e8f0; color: #475569; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+        .badge.fita { background: #10b981; color: white; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top:0; left:0; z-index: 1; }
+        #error-msg { position: absolute; top: 50%; width: 100%; text-align: center; color: #ef4444; font-weight: bold; font-family: sans-serif; z-index: 20; }
+    </style>
+</head>
+<body>
+
+    <div id="error-msg" style="display:none;">Nenhum dado de peça encontrado no QR Code.</div>
+    <div id="canvas-container"></div>
+    
+    <div id="info-panel">
+        <div class="title" id="lbl_nome">Carregando...</div>
+        <div class="dim" id="lbl_dim">0 x 0 x 0 mm</div>
+        <div class="badges" id="lbl_badges"></div>
+    </div>
+
+    <script>
+        // 1. DESCODIFICADOR DO PAYLOAD (Lê o que está na URL)
+        function loadDataFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const payloadBase64 = urlParams.get('data');
+            
+            if (!payloadBase64) {
+                document.getElementById('error-msg').style.display = 'block';
+                return null;
+            }
+
+            try {
+                // Descompacta a Base64 criada pelo dash_labels.js
+                const jsonString = decodeURIComponent(escape(atob(payloadBase64)));
+                return JSON.parse(jsonString);
+            } catch (e) {
+                document.getElementById('error-msg').innerText = "QR Code inválido ou corrompido.";
+                document.getElementById('error-msg').style.display = 'block';
+                return null;
+            }
+        }
+
+        const pecaData = loadDataFromURL();
+
+        if (pecaData) {
+            // 2. ATUALIZA A INTERFACE HTML
+            document.getElementById('lbl_nome').innerText = pecaData.n;
+            document.getElementById('lbl_dim').innerText = `${pecaData.d[0]} x ${pecaData.d[1]} x ${pecaData.d[2]} mm`;
+            
+            let badgesHtml = `<div class="badge">${pecaData.m}</div>`;
+            if (pecaData.f) badgesHtml += `<div class="badge fita">Fita: ${pecaData.f}</div>`;
+            
+            let furosCount = pecaData.u ? pecaData.u.split('-').length : 0;
+            if (furosCount > 0) badgesHtml += `<div class="badge" style="background:#0284c7; color:white;">${furosCount} Usinagens</div>`;
+            
+            document.getElementById('lbl_badges').innerHTML = badgesHtml;
+
+            // 3. RENDERIZAÇÃO 3D (O Mini-Motor do Celular)
+            initViewer(pecaData);
+        }
+
+        function initViewer(data) {
+            const container = document.getElementById('canvas-container');
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color('#f1f5f9');
+            
+            const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+            
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+            
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            dirLight.position.set(1000, 1000, 1000);
+            scene.add(dirLight);
+
+            // Medidas da Chapa
+            const comp = data.d[0];
+            const larg = data.d[1];
+            const esp = data.d[2];
+
+            // Material Transparente da Chapa
+            const boardMat = new THREE.MeshStandardMaterial({ 
+                color: 0xcbd5e1, transparent: true, opacity: 0.6, roughness: 0.8 
+            });
+            const boardGeo = new THREE.BoxGeometry(comp, larg, esp);
+            boardGeo.translate(comp / 2, larg / 2, esp / 2);
+            const boardMesh = new THREE.Mesh(boardGeo, boardMat);
+            scene.add(boardMesh);
+
+            // Linhas de Contorno
+            const edges = new THREE.EdgesGeometry(boardGeo);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x94a3b8 }));
+            scene.add(line);
+
+            // Lê as Usinagens da String Minificada (ex: "FFX50Y30Z8D15-RF...")
+            if (data.u && data.u.length > 0) {
+                const holeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
+                const slotMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.4 });
+                
+                const furosArray = data.u.split('-');
+                
+                furosArray.forEach(uStr => {
+                    if(!uStr) return;
+                    // Expressão Regular para desmembrar a string minificada
+                    const match = uStr.match(/([A-Z])([A-Z])X([\d.]+)Y([\d.]+)Z([\d.]+)D([\d.]+)(?:C([\d.]+))?/);
+                    if(match) {
+                        const tipo = match[1] === 'R' ? 'Rasgo' : 'Furo';
+                        const faceChar = match[2];
+                        const x = parseFloat(match[3]);
+                        const y = parseFloat(match[4]);
+                        const z = parseFloat(match[5]); // profundidade
+                        const dia = parseFloat(match[6]);
+                        const compRasgo = match[7] ? parseFloat(match[7]) : dia;
+
+                        let cx = x;
+                        let cy = y;
+                        let cz = (faceChar === 'T') ? (z/2) : (esp - (z/2)); // T = Traseira, F = Frontal
+
+                        let mesh;
+                        if (tipo === 'Rasgo') {
+                            const geo = new THREE.BoxGeometry(compRasgo, dia, z);
+                            mesh = new THREE.Mesh(geo, slotMat);
+                        } else {
+                            const radius = dia / 2;
+                            const geo = new THREE.CylinderGeometry(radius, radius, z, 32);
+                            mesh = new THREE.Mesh(geo, holeMat);
+                            mesh.rotation.x = Math.PI / 2;
+                        }
+                        
+                        mesh.position.set(cx, cy, cz);
+                        scene.add(mesh);
+                    }
+                });
+            }
+
+            // Fitas de Borda
+            if (data.f) {
+                const fMat = new THREE.MeshStandardMaterial({ color: '#10b981' });
+                const th = 2;
+                if(data.f.includes('C1')) { const g = new THREE.BoxGeometry(comp, th, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp/2, 0, esp/2); scene.add(m); }
+                if(data.f.includes('C2')) { const g = new THREE.BoxGeometry(comp, th, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp/2, larg, esp/2); scene.add(m); }
+                if(data.f.includes('L1')) { const g = new THREE.BoxGeometry(th, larg, esp); const m = new THREE.Mesh(g, fMat); m.position.set(0, larg/2, esp/2); scene.add(m); }
+                if(data.f.includes('L2')) { const g = new THREE.BoxGeometry(th, larg, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp, larg/2, esp/2); scene.add(m); }
+            }
+
+            // Câmera Iso
+            const maxDim = Math.max(comp, larg);
+            camera.position.set(comp + (maxDim*0.7), larg + (maxDim*0.7), esp + (maxDim*0.7));
+            controls.target.set(comp / 2, larg / 2, esp / 2);
+            controls.update();
+
+            function animate() {
+                requestAnimationFrame(animate);
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // Ajuste de Tela
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+    </script>
+</body>
+</html>
