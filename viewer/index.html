@@ -4,87 +4,65 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MOBPRO - Visualizador de Peça</title>
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    
     <style>
-        /* Otimizações Nativas para Mobile */
         body { 
             margin: 0; padding: 0; background: #f8fafc; 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
             overflow: hidden; 
-            touch-action: none; /* Previne o "pull-to-refresh" e scroll acidental no celular */
-            -webkit-user-select: none;
-            user-select: none;
+            touch-action: none; 
+            -webkit-user-select: none; user-select: none; 
         }
-        
-        /* Bottom Sheet (Painel Estilo App Nativo) */
         #info-panel { 
             position: absolute; bottom: 0; left: 0; width: 100%; 
-            background: rgba(255, 255, 255, 0.95); 
-            backdrop-filter: blur(10px);
-            padding: 20px 20px 30px 20px; 
-            border-top: 1px solid #e2e8f0; 
-            box-sizing: border-box; 
-            box-shadow: 0 -10px 25px rgba(0,0,0,0.08); 
-            z-index: 10; 
-            border-radius: 24px 24px 0 0; 
+            background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); 
+            padding: 20px 20px 30px 20px; border-top: 1px solid #e2e8f0; 
+            box-sizing: border-box; box-shadow: 0 -10px 25px rgba(0,0,0,0.08); 
+            z-index: 10; border-radius: 24px 24px 0 0; 
         }
-        
         .header-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
         .title { font-size: 20px; font-weight: 900; color: #0f172a; line-height: 1.2; flex: 1; padding-right: 10px; }
         .dim { font-size: 15px; font-weight: 800; color: #0ea5e9; margin-bottom: 15px; letter-spacing: 0.5px; }
-        
         .badges { display: flex; gap: 8px; flex-wrap: wrap; }
         .badge { background: #e2e8f0; color: #334155; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 4px; }
         .badge.fita { background: #10b981; color: white; }
         .badge.cnc { background: #0284c7; color: white; }
         .badge.cutout { background: #8b5cf6; color: white; }
         .badge.basic { background: #fef2f2; color: #ef4444; border: 1px solid #fecdd3; }
-
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top:0; left:0; z-index: 1; }
-        
         #error-msg { 
-            position: absolute; top: 40%; width: 90%; left: 5%; 
-            text-align: center; color: #ef4444; font-weight: bold; 
-            background: white; padding: 20px; border-radius: 12px; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1); box-sizing: border-box; z-index: 20; 
+            position: absolute; top: 40%; width: 90%; left: 5%; text-align: center; 
+            color: #ef4444; font-weight: bold; background: white; padding: 20px; 
+            border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+            box-sizing: border-box; z-index: 20; 
         }
-        
         .drag-hint { 
             position: absolute; top: 20px; width: 100%; text-align: center; 
             pointer-events: none; z-index: 5; color: #475569; font-size: 12px; 
-            font-weight: 700; background: rgba(255,255,255,0.8); 
-            padding: 8px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            font-weight: 700; background: rgba(255,255,255,0.8); padding: 8px 0; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
         }
     </style>
 </head>
 <body>
-
     <div id="error-msg" style="display:none;">Nenhum dado de peça encontrado no QR Code.</div>
     <div class="drag-hint">👆 Deslize para rodar | ✌️ Pinça para zoom</div>
     <div id="canvas-container"></div>
-    
     <div id="info-panel">
-        <div class="header-row">
-            <div class="title" id="lbl_nome">A Carregar...</div>
-        </div>
+        <div class="header-row"><div class="title" id="lbl_nome">A Carregar...</div></div>
         <div class="dim" id="lbl_dim">0 x 0 x 0 mm</div>
         <div class="badges" id="lbl_badges"></div>
     </div>
 
     <script>
-        // 1. DESCODIFICADOR DO PAYLOAD
         function loadDataFromURL() {
             const urlParams = new URLSearchParams(window.location.search);
             const payloadBase64 = urlParams.get('data');
-            
             if (!payloadBase64) {
                 showError("Nenhuma informação encontrada na URL da etiqueta.");
                 return null;
             }
-
             try {
                 const jsonString = decodeURIComponent(escape(atob(payloadBase64)));
                 return JSON.parse(jsonString);
@@ -104,28 +82,28 @@
 
         if (pecaData) {
             // ============================================================================
-            // TRAVA DE SEGURANÇA COMERCIAL (GATEKEEPER)
-            // Oculta informações avançadas se a variável 'cnc' não for verdadeira.
+            // TRAVA COMERCIAL (GATEKEEPER)
+            // Se a licença for falsa, destrói da memória os dados proprietários (CNC)
             // ============================================================================
             const hasCncLicense = (pecaData.cnc === true || pecaData.cnc === 1 || pecaData.cnc === "1" || pecaData.cnc === "true");
             
             if (!hasCncLicense) {
-                // Destrói os dados de furação e recorte da memória imediatamente
                 pecaData.u = "";
                 pecaData.c = null;
+                pecaData.o = null;
             }
 
-            // 2. ATUALIZA A INTERFACE HTML
             document.getElementById('lbl_nome').innerText = pecaData.n || "Peça Desconhecida";
             document.getElementById('lbl_dim').innerText = `${pecaData.d[0]} x ${pecaData.d[1]} x ${pecaData.d[2]} mm`;
             
             let badgesHtml = `<div class="badge">🪵 ${pecaData.m || 'MDF'}</div>`;
             if (pecaData.f) badgesHtml += `<div class="badge fita">🎗️ Fita: ${pecaData.f}</div>`;
             
+            const caminhosStr = pecaData.c || pecaData.o;
+            const hasCutout = caminhosStr && caminhosStr.length > 0;
+            const furosCount = pecaData.u ? pecaData.u.split('-').filter(Boolean).length : 0;
+
             if (hasCncLicense) {
-                let hasCutout = pecaData.c && pecaData.c.length > 0;
-                let furosCount = pecaData.u ? pecaData.u.split('-').filter(Boolean).length : 0;
-                
                 if (hasCutout) badgesHtml += `<div class="badge cutout">✂️ Recorte Orgânico</div>`;
                 if (furosCount > 0) badgesHtml += `<div class="badge cnc">🎯 ${furosCount} Usinagens</div>`;
             } else {
@@ -133,20 +111,16 @@
             }
             
             document.getElementById('lbl_badges').innerHTML = badgesHtml;
-
-            // 3. RENDERIZAÇÃO 3D OTIMIZADA PARA MOBILE
-            initViewer(pecaData);
+            initViewer(pecaData, hasCutout, caminhosStr);
         }
 
-        function initViewer(data) {
+        function initViewer(data, hasCutout, caminhosStr) {
             const container = document.getElementById('canvas-container');
             const scene = new THREE.Scene();
             scene.background = new THREE.Color('#f8fafc');
             
             const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 5000);
             const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-            
-            // Otimização para telas Retina (Celulares modernos)
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.setSize(window.innerWidth, window.innerHeight);
             container.appendChild(renderer.domElement);
@@ -154,10 +128,7 @@
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
-            controls.minDistance = 100;
-            controls.maxDistance = 3000;
             
-            // Iluminação limpa
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
             scene.add(ambientLight);
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
@@ -167,12 +138,10 @@
             dirLight2.position.set(-1000, -1000, -1000);
             scene.add(dirLight2);
 
-            // Medidas da Chapa
             const comp = data.d[0];
             const larg = data.d[1];
             const esp  = data.d[2];
 
-            // Material da Chapa
             const boardMat = new THREE.MeshStandardMaterial({ 
                 color: 0xcbd5e1, transparent: true, opacity: 0.85, roughness: 0.6 
             });
@@ -180,38 +149,37 @@
             let boardGeo;
 
             // ============================================================================
-            // MOTOR DE RECORTE (PEÇAS EM L E PAINEL DE FORNO)
+            // MOTOR GEOMÉTRICO (DESENHO DE PEÇAS EM L E RECORTES DE FORNO)
             // ============================================================================
-            if (data.c && data.c.length > 0) {
-                // Desenha a forma orgânica baseada nos vetores
+            if (hasCutout) {
                 const shape = new THREE.Shape();
-                const outerBoundary = data.c[0];
+                const pathsStr = caminhosStr.split('|');
                 
-                if (outerBoundary && outerBoundary.length > 0) {
-                    shape.moveTo(outerBoundary[0].x, outerBoundary[0].y);
-                    for(let i = 1; i < outerBoundary.length; i++) {
-                        shape.lineTo(outerBoundary[i].x, outerBoundary[i].y);
-                    }
+                pathsStr.forEach((pathStr, index) => {
+                    if (!pathStr) return;
+                    const ptsStr = pathStr.split('_');
+                    const pts = ptsStr.map(pt => {
+                        const coords = pt.split(',');
+                        return { x: parseFloat(coords[0]), y: parseFloat(coords[1]) };
+                    });
                     
-                    // Desenha os recortes internos (buracos do forno)
-                    for(let i = 1; i < data.c.length; i++) {
+                    if (index === 0) {
+                        // Desenha o contorno externo (Ex: Molde em L)
+                        shape.moveTo(pts[0].x, pts[0].y);
+                        for(let i = 1; i < pts.length; i++) shape.lineTo(pts[i].x, pts[i].y);
+                    } else {
+                        // Desenha o furo interno subtraindo malha (Ex: Nicho do Forno)
                         const holePath = new THREE.Path();
-                        const innerHole = data.c[i];
-                        if (innerHole && innerHole.length > 0) {
-                            holePath.moveTo(innerHole[0].x, innerHole[0].y);
-                            for(let j = 1; j < innerHole.length; j++) {
-                                holePath.lineTo(innerHole[j].x, innerHole[j].y);
-                            }
-                            shape.holes.push(holePath);
-                        }
+                        holePath.moveTo(pts[0].x, pts[0].y);
+                        for(let j = 1; j < pts.length; j++) holePath.lineTo(pts[j].x, pts[j].y);
+                        shape.holes.push(holePath);
                     }
-                }
+                });
                 
                 const extrudeSettings = { depth: esp, bevelEnabled: false };
                 boardGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-                
             } else {
-                // Modo Basic / Retângulo Simples
+                // Desenha a Chapa Retangular Standard (Aplica a todas as Basics)
                 boardGeo = new THREE.BoxGeometry(comp, larg, esp);
                 boardGeo.translate(comp / 2, larg / 2, esp / 2);
             }
@@ -219,20 +187,18 @@
             const boardMesh = new THREE.Mesh(boardGeo, boardMat);
             scene.add(boardMesh);
 
-            // Linhas de Contorno (Wireframe limpo)
             const edges = new THREE.EdgesGeometry(boardGeo);
             const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x64748b, linewidth: 1 }));
             scene.add(line);
 
             // ============================================================================
-            // RENDERIZAÇÃO DE USINAGENS (Apenas visível se Licença = PRO)
+            // MOTOR DE USINAGEM 
             // ============================================================================
             if (data.u && data.u.length > 0) {
                 const holeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
                 const slotMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4 });
                 
                 const furosArray = data.u.split('-');
-                
                 furosArray.forEach(uStr => {
                     if(!uStr) return;
                     const match = uStr.match(/([A-Z])([A-Z])X([\d.]+)Y([\d.]+)Z([\d.]+)D([\d.]+)(?:C([\d.]+))?/);
@@ -245,9 +211,7 @@
                         const dia = parseFloat(match[6]);
                         const compRasgo = match[7] ? parseFloat(match[7]) : dia;
 
-                        let cx = x;
-                        let cy = y;
-                        let cz = (faceChar === 'T') ? (z/2) : (esp - (z/2));
+                        let cx = x; let cy = y; let cz = (faceChar === 'T') ? (z/2) : (esp - (z/2));
 
                         let mesh;
                         if (tipo === 'Rasgo') {
@@ -266,25 +230,20 @@
                 });
             }
 
-            // ============================================================================
-            // FITAS DE BORDA (Marcações visuais de aplicação)
-            // ============================================================================
             if (data.f) {
                 const fMat = new THREE.MeshStandardMaterial({ color: '#10b981' });
-                const th = 2; // Espessura visual da fita no 3D
+                const th = 2; 
                 if(data.f.includes('C1')) { const g = new THREE.BoxGeometry(comp, th, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp/2, 0, esp/2); scene.add(m); }
                 if(data.f.includes('C2')) { const g = new THREE.BoxGeometry(comp, th, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp/2, larg, esp/2); scene.add(m); }
                 if(data.f.includes('L1')) { const g = new THREE.BoxGeometry(th, larg, esp); const m = new THREE.Mesh(g, fMat); m.position.set(0, larg/2, esp/2); scene.add(m); }
                 if(data.f.includes('L2')) { const g = new THREE.BoxGeometry(th, larg, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp, larg/2, esp/2); scene.add(m); }
             }
 
-            // Enquadramento da Câmera
             const maxDim = Math.max(comp, larg);
             camera.position.set(comp + (maxDim*0.8), larg + (maxDim*0.8), esp + (maxDim*0.8));
             controls.target.set(comp / 2, larg / 2, esp / 2);
             controls.update();
 
-            // Loop de Animação
             function animate() {
                 requestAnimationFrame(animate);
                 controls.update();
@@ -292,7 +251,6 @@
             }
             animate();
 
-            // Responsividade para Rotação de Tela
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
