@@ -3,44 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MOBPRO - Visualizador de Peça</title>
+    <title>MOBPRO - Visualizador</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <style>
-        body { 
-            margin: 0; padding: 0; background: #f8fafc; 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-            overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; 
-        }
-        #info-panel { 
-            position: absolute; bottom: 0; left: 0; width: 100%; 
-            background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); 
-            padding: 20px 20px 30px 20px; border-top: 1px solid #e2e8f0; 
-            box-sizing: border-box; box-shadow: 0 -10px 25px rgba(0,0,0,0.08); 
-            z-index: 10; border-radius: 24px 24px 0 0; 
-        }
+        body { margin: 0; padding: 0; background: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+        #info-panel { position: absolute; bottom: 0; left: 0; width: 100%; background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); padding: 20px 20px 30px 20px; border-top: 1px solid #e2e8f0; box-sizing: border-box; box-shadow: 0 -10px 25px rgba(0,0,0,0.08); z-index: 10; border-radius: 24px 24px 0 0; }
         .header-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
         .title { font-size: 20px; font-weight: 900; color: #0f172a; line-height: 1.2; flex: 1; padding-right: 10px; }
         .dim { font-size: 15px; font-weight: 800; color: #0ea5e9; margin-bottom: 15px; letter-spacing: 0.5px; }
         .badges { display: flex; gap: 8px; flex-wrap: wrap; }
-        .badge { background: #e2e8f0; color: #334155; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 4px; }
-        .badge.fita { background: #10b981; color: white; }
-        .badge.cnc { background: #0284c7; color: white; }
-        .badge.cutout { background: #8b5cf6; color: white; }
+        .badge { background: #f1f5f9; color: #334155; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; border: 1px solid #e2e8f0; }
+        .badge.cnc { background: #0284c7; color: white; border: none; }
+        .badge.cutout { background: #8b5cf6; color: white; border: none; }
         .badge.basic { background: #fef2f2; color: #ef4444; border: 1px solid #fecdd3; }
+        .color-dot { width: 12px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,0,0,0.2); }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top:0; left:0; z-index: 1; }
-        #error-msg { 
-            position: absolute; top: 40%; width: 90%; left: 5%; text-align: center; 
-            color: #ef4444; font-weight: bold; background: white; padding: 20px; 
-            border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
-            box-sizing: border-box; z-index: 20; 
-        }
-        .drag-hint { 
-            position: absolute; top: 20px; width: 100%; text-align: center; 
-            pointer-events: none; z-index: 5; color: #475569; font-size: 12px; 
-            font-weight: 700; background: rgba(255,255,255,0.8); padding: 8px 0; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
-        }
+        #error-msg { position: absolute; top: 40%; width: 90%; left: 5%; text-align: center; color: #ef4444; font-weight: bold; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); box-sizing: border-box; z-index: 20; }
+        .drag-hint { position: absolute; top: 20px; width: 100%; text-align: center; pointer-events: none; z-index: 5; color: #475569; font-size: 12px; font-weight: 700; background: rgba(255,255,255,0.8); padding: 8px 0; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
     </style>
 </head>
 <body>
@@ -54,6 +34,15 @@
     </div>
 
     <script>
+        // GERADOR DE CORES HASH (Mesmo algoritmo da inspeção desktop para manter o padrão visual)
+        const tapePalette = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4', '#0ea5e9', '#3b82f6', '#8b5cf6', '#d946ef', '#ec4899'];
+        function getColorForTape(name) {
+            if (!name) return '#cbd5e1';
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            return tapePalette[Math.abs(hash) % tapePalette.length];
+        }
+
         function loadDataFromURL() {
             const urlParams = new URLSearchParams(window.location.search);
             const payloadSafe = urlParams.get('data');
@@ -64,19 +53,17 @@
             }
 
             try {
-                // Reverte a proteção URL-Safe
                 let base64 = payloadSafe.replace(/-/g, '+').replace(/_/g, '/');
                 while (base64.length % 4) { base64 += '='; }
                 
                 const jsonString = decodeURIComponent(escape(atob(base64)));
                 const rawData = JSON.parse(jsonString);
 
-                // Reconstrói o Objeto a partir do Micro-Array
                 return {
                     n: rawData[0],
                     m: rawData[1],
                     d: [rawData[2], rawData[3], rawData[4]],
-                    f: rawData[5],
+                    f: rawData[5] ? rawData[5].split('|') : ["","","",""],
                     u: rawData[6],
                     c: rawData[7] ? rawData[7].split('|').map(p => p.split('_').map(c => ({x: parseFloat(c.split(',')[0]), y: parseFloat(c.split(',')[1])}))) : null,
                     cnc: rawData[8] === 1
@@ -97,8 +84,6 @@
 
         if (pecaData) {
             const hasCncLicense = pecaData.cnc === true;
-            
-            // GATEKEEPER DE SEGURANÇA COMERCIAL
             if (!hasCncLicense) {
                 pecaData.u = "";
                 pecaData.c = null;
@@ -108,14 +93,28 @@
             document.getElementById('lbl_dim').innerText = `${pecaData.d[0]} x ${pecaData.d[1]} x ${pecaData.d[2]} mm`;
             
             let badgesHtml = `<div class="badge">🪵 ${pecaData.m || 'MDF'}</div>`;
-            if (pecaData.f) badgesHtml += `<div class="badge fita">🎗️ Fita: ${pecaData.f}</div>`;
+            
+            // --- BADGES DE FITAS COM CORES INDIVIDUAIS ---
+            const tapeLabels = ['C1', 'C2', 'L1', 'L2'];
+            if (pecaData.f && pecaData.f.some(Boolean)) {
+                pecaData.f.forEach((tapeName, index) => {
+                    if (tapeName) {
+                        let cor = getColorForTape(tapeName);
+                        badgesHtml += `
+                        <div class="badge" style="border-left: 3px solid ${cor}">
+                            <div class="color-dot" style="background-color: ${cor}"></div>
+                            <b>${tapeLabels[index]}:</b> ${tapeName}
+                        </div>`;
+                    }
+                });
+            }
             
             const hasCutout = pecaData.c && pecaData.c.length > 0;
             const furosCount = pecaData.u ? pecaData.u.split('-').filter(Boolean).length : 0;
 
             if (hasCncLicense) {
-                if (hasCutout) badgesHtml += `<div class="badge cutout">✂️ Recorte Orgânico</div>`;
-                if (furosCount > 0) badgesHtml += `<div class="badge cnc">🎯 ${furosCount} Usinagens</div>`;
+                if (hasCutout) badgesHtml += `<div class="badge cutout">✂️ Recorte</div>`;
+                if (furosCount > 0) badgesHtml += `<div class="badge cnc">🎯 ${furosCount} Furos</div>`;
             } else {
                 badgesHtml += `<div class="badge basic">🔒 Licença Basic (S/ Furos)</div>`;
             }
@@ -221,13 +220,25 @@
                 });
             }
 
+            // --- 3D DAS FITAS DE BORDA COM CORES INDIVIDUAIS ---
             if (data.f) {
-                const fMat = new THREE.MeshStandardMaterial({ color: '#10b981' });
-                const th = 2; 
-                if(data.f.includes('C1')) { const g = new THREE.BoxGeometry(comp, th, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp/2, 0, esp/2); scene.add(m); }
-                if(data.f.includes('C2')) { const g = new THREE.BoxGeometry(comp, th, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp/2, larg, esp/2); scene.add(m); }
-                if(data.f.includes('L1')) { const g = new THREE.BoxGeometry(th, larg, esp); const m = new THREE.Mesh(g, fMat); m.position.set(0, larg/2, esp/2); scene.add(m); }
-                if(data.f.includes('L2')) { const g = new THREE.BoxGeometry(th, larg, esp); const m = new THREE.Mesh(g, fMat); m.position.set(comp, larg/2, esp/2); scene.add(m); }
+                const th = 3; // Engrossei a fita no 3D para ser mais visível no celular
+                const tapeSetup = [
+                    { mat: data.f[0], x: comp/2, y: 0, z: esp/2, w: comp, h: th, d: esp }, // C1
+                    { mat: data.f[1], x: comp/2, y: larg, z: esp/2, w: comp, h: th, d: esp }, // C2
+                    { mat: data.f[2], x: 0, y: larg/2, z: esp/2, w: th, h: larg, d: esp }, // L1
+                    { mat: data.f[3], x: comp, y: larg/2, z: esp/2, w: th, h: larg, d: esp }  // L2
+                ];
+                
+                tapeSetup.forEach(t => {
+                    if(t.mat) {
+                        let fMat = new THREE.MeshStandardMaterial({ color: getColorForTape(t.mat), roughness: 0.5 });
+                        let g = new THREE.BoxGeometry(t.w, t.h, t.d);
+                        let m = new THREE.Mesh(g, fMat);
+                        m.position.set(t.x, t.y, t.z);
+                        scene.add(m);
+                    }
+                });
             }
 
             const maxDim = Math.max(comp, larg);
