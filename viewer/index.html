@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MOBPRO - Visualizador</title>
+    <title>MOBPRO - Visualizador Chão de Fábrica</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <style>
@@ -17,6 +17,7 @@
         .badge.cnc { background: #0284c7; color: white; border: none; }
         .badge.cutout { background: #8b5cf6; color: white; border: none; }
         .badge.basic { background: #fef2f2; color: #ef4444; border: 1px solid #fecdd3; }
+        .badge.veio { background: #f59e0b; color: white; border: none; }
         .color-dot { width: 12px; height: 12px; border-radius: 2px; border: 1px solid rgba(0,0,0,0.2); }
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top:0; left:0; z-index: 1; }
         #error-msg { position: absolute; top: 40%; width: 90%; left: 5%; text-align: center; color: #ef4444; font-weight: bold; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); box-sizing: border-box; z-index: 20; }
@@ -27,6 +28,8 @@
     <div id="error-msg" style="display:none;">Nenhum dado encontrado no QR Code.</div>
     <div class="drag-hint">👆 Deslize para rodar | ✌️ Pinça para zoom</div>
     <div id="canvas-container"></div>
+    <div id="labels-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: hidden;"></div>
+    
     <div id="info-panel">
         <div class="header-row"><div class="title" id="lbl_nome">A Carregar...</div></div>
         <div class="dim" id="lbl_dim">0 x 0 x 0 mm</div>
@@ -56,17 +59,25 @@
                 let base64 = payloadSafe.replace(/-/g, '+').replace(/_/g, '/');
                 while (base64.length % 4) { base64 += '='; }
                 
-                const jsonString = decodeURIComponent(escape(atob(base64)));
-                const rawData = JSON.parse(jsonString);
+                const decodedString = decodeURIComponent(escape(atob(base64)));
+                let rawData;
+                
+                // Detecção de formato: JSON antigo vs delimitador ';' novo (Compacto)
+                if (decodedString.startsWith('[') && decodedString.endsWith(']')) {
+                    rawData = JSON.parse(decodedString);
+                } else {
+                    rawData = decodedString.split(';');
+                }
 
                 return {
                     n: rawData[0],
                     m: rawData[1],
-                    d: [rawData[2], rawData[3], rawData[4]],
+                    d: [parseFloat(rawData[2]), parseFloat(rawData[3]), parseFloat(rawData[4])],
                     f: rawData[5] ? rawData[5].split('|') : ["","","",""],
                     u: rawData[6],
                     c: rawData[7] ? rawData[7].split('|').map(p => p.split('_').map(c => ({x: parseFloat(c.split(',')[0]), y: parseFloat(c.split(',')[1])}))) : null,
-                    cnc: rawData[8] === 1
+                    cnc: parseInt(rawData[8]) === 1,
+                    grained: parseInt(rawData[9]) === 1 // Flag do sentido de veio
                 };
             } catch (e) {
                 showError("QR Code corrompido ou código inválido.");
@@ -118,6 +129,10 @@
             } else {
                 badgesHtml += `<div class="badge basic">🔒 Licença Basic (S/ Furos)</div>`;
             }
+
+            if (pecaData.grained) {
+                badgesHtml += `<div class="badge veio">🪵 Com Veio</div>`;
+            }
             
             document.getElementById('lbl_badges').innerHTML = badgesHtml;
             initViewer(pecaData, hasCutout);
@@ -125,6 +140,7 @@
 
         function initViewer(data, hasCutout) {
             const container = document.getElementById('canvas-container');
+            const labelsContainer = document.getElementById('labels-container');
             const scene = new THREE.Scene();
             scene.background = new THREE.Color('#f8fafc');
             
@@ -222,7 +238,7 @@
 
             // --- 3D DAS FITAS DE BORDA COM CORES INDIVIDUAIS ---
             if (data.f) {
-                const th = 3; // Engrossei a fita no 3D para ser mais visível no celular
+                const th = 3;
                 const tapeSetup = [
                     { mat: data.f[0], x: comp/2, y: 0, z: esp/2, w: comp, h: th, d: esp }, // C1
                     { mat: data.f[1], x: comp/2, y: larg, z: esp/2, w: comp, h: th, d: esp }, // C2
@@ -241,14 +257,162 @@
                 });
             }
 
+            // --- SETA DE SENTIDO DO VEIO ---
+            if (data.grained) {
+                const dir = new THREE.Vector3(1, 0, 0); // Sentido do Comprimento (X)
+                dir.normalize();
+                const origin = new THREE.Vector3(comp / 2, larg / 2, esp + 5);
+                const length = Math.min(comp, larg) * 0.4;
+                const arrowHelper = new THREE.ArrowHelper(dir, origin, length, 0xf59e0b, length * 0.25, length * 0.12);
+                scene.add(arrowHelper);
+            }
+
+            // --- DESENHAR COTAS TÉCNICAS (LINHAS) ---
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x0ea5e9, linewidth: 2 });
+            const cotaOffset = 45; // Afastado para não sobrepor a peça
+
+            // Cota C (Comprimento)
+            const cotaCGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, -cotaOffset, esp / 2),
+                new THREE.Vector3(comp, -cotaOffset, esp / 2)
+            ]);
+            const cotaCLine = new THREE.Line(cotaCGeo, lineMat);
+            scene.add(cotaCLine);
+
+            const extC1 = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, esp / 2),
+                new THREE.Vector3(0, -cotaOffset - 5, esp / 2)
+            ]), lineMat);
+            const extC2 = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(comp, 0, esp / 2),
+                new THREE.Vector3(comp, -cotaOffset - 5, esp / 2)
+            ]), lineMat);
+            scene.add(extC1);
+            scene.add(extC2);
+
+            // Cota L (Largura)
+            const cotaLGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(-cotaOffset, 0, esp / 2),
+                new THREE.Vector3(-cotaOffset, larg, esp / 2)
+            ]);
+            const cotaLLine = new THREE.Line(cotaLGeo, lineMat);
+            scene.add(cotaLLine);
+
+            const extL1 = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, esp / 2),
+                new THREE.Vector3(-cotaOffset - 5, 0, esp / 2)
+            ]), lineMat);
+            const extL2 = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, larg, esp / 2),
+                new THREE.Vector3(-cotaOffset - 5, larg, esp / 2)
+            ]), lineMat);
+            scene.add(extL1);
+            scene.add(extL2);
+
+            // --- LABELS FLUTUANTES HTML PROJETADOS ---
+            const projectTargets = [];
+
+            function addLabel(text, pos3d, className, styleProps = {}) {
+                const el = document.createElement('div');
+                el.className = className;
+                el.innerText = text;
+                el.style.position = 'absolute';
+                el.style.transform = 'translate(-50%, -50%)';
+                el.style.zIndex = '5';
+                el.style.userSelect = 'none';
+                el.style.webkitUserSelect = 'none';
+                
+                Object.assign(el.style, styleProps);
+                labelsContainer.appendChild(el);
+                
+                projectTargets.push({ el, pos: pos3d });
+                return el;
+            }
+
+            // Labels de Dimensão
+            addLabel(`C: ${comp} mm`, new THREE.Vector3(comp / 2, -cotaOffset, esp / 2), 'dim-lbl', {
+                background: '#0ea5e9',
+                color: 'white',
+                padding: '3px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: '800',
+                border: '1.5px solid white',
+                boxShadow: '0 2px 8px rgba(14,165,233,0.3)',
+                whiteSpace: 'nowrap'
+            });
+
+            addLabel(`L: ${larg} mm`, new THREE.Vector3(-cotaOffset, larg / 2, esp / 2), 'dim-lbl', {
+                background: '#0ea5e9',
+                color: 'white',
+                padding: '3px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: '800',
+                border: '1.5px solid white',
+                boxShadow: '0 2px 8px rgba(14,165,233,0.3)',
+                whiteSpace: 'nowrap'
+            });
+
+            // Labels das Fitas (C1, C2, L1, L2)
+            if (data.f) {
+                const tapeLabels = ['C1', 'C2', 'L1', 'L2'];
+                const tapePositions = [
+                    new THREE.Vector3(comp/2, 0, esp/2), // C1
+                    new THREE.Vector3(comp/2, larg, esp/2), // C2
+                    new THREE.Vector3(0, larg/2, esp/2), // L1
+                    new THREE.Vector3(comp, larg/2, esp/2)  // L2
+                ];
+
+                tapePositions.forEach((pos, idx) => {
+                    const tapeName = data.f[idx];
+                    if (tapeName) {
+                        const cor = getColorForTape(tapeName);
+                        addLabel(tapeLabels[idx], pos, 'tape-lbl', {
+                            background: cor,
+                            color: 'white',
+                            padding: '4px 9px',
+                            borderRadius: '20px',
+                            fontSize: '10px',
+                            fontWeight: '900',
+                            border: '2px solid white',
+                            boxShadow: '0 3px 10px rgba(0,0,0,0.25)',
+                            whiteSpace: 'nowrap'
+                        });
+                    }
+                });
+            }
+
             const maxDim = Math.max(comp, larg);
             camera.position.set(comp + (maxDim*0.8), larg + (maxDim*0.8), esp + (maxDim*0.8));
             controls.target.set(comp / 2, larg / 2, esp / 2);
             controls.update();
 
+            const tempV = new THREE.Vector3();
+            function updateLabelsProjection() {
+                projectTargets.forEach(t => {
+                    tempV.copy(t.pos);
+                    tempV.project(camera);
+                    
+                    // Se estiver atrás do plano da câmera, oculta
+                    if (tempV.z > 1) {
+                        t.el.style.display = 'none';
+                        return;
+                    }
+                    
+                    const x = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+                    const y = (tempV.y * -0.5 + 0.5) * window.innerHeight;
+                    
+                    t.el.style.display = 'block';
+                    t.el.style.left = `${x}px`;
+                    t.el.style.top = `${y}px`;
+                });
+            }
+
             function animate() {
                 requestAnimationFrame(animate);
                 controls.update();
+                updateLabelsProjection();
                 renderer.render(scene, camera);
             }
             animate();
@@ -262,3 +426,4 @@
     </script>
 </body>
 </html>
+
