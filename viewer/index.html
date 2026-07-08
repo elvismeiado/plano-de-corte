@@ -167,8 +167,22 @@
             const larg = data.d[1];
             const esp  = data.d[2];
 
+            let corBase = 0xd1d5db;
+            const matNome = (data.m || "").toLowerCase();
+            if (matNome.includes("branco")) corBase = 0xfbfbfb;
+            else if (matNome.includes("preto")) corBase = 0x18181b;
+            else if (matNome.includes("grafite") || matNome.includes("cinza") || matNome.includes("chumbo")) corBase = 0x3f3f46;
+            else if (matNome.includes("freijó") || matNome.includes("louro") || matNome.includes("carvalho") || matNome.includes("nogal") || matNome.includes("amadeirado")) corBase = 0xb45309;
+            else if (data.m) {
+                let hash = 0;
+                const s = data.m;
+                for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash);
+                const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+                corBase = new THREE.Color("#" + "00000".substring(0, 6 - c.length) + c).getHex();
+            }
+
             const boardMat = new THREE.MeshStandardMaterial({ 
-                color: 0xcbd5e1, transparent: true, opacity: 0.85, roughness: 0.6 
+                color: corBase, roughness: 0.7, metalness: 0.1, transparent: false, depthWrite: true 
             });
 
             let boardGeo;
@@ -201,8 +215,8 @@
             scene.add(line);
 
             if (data.u && data.u.length > 0) {
-                const holeMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
-                const slotMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4 });
+                const holeMat = new THREE.MeshBasicMaterial({ color: 0xff6a00, transparent: true, opacity: 1.0, depthWrite: true });
+                const slotMat = new THREE.MeshBasicMaterial({ color: 0xff6a00, transparent: true, opacity: 1.0, depthWrite: true });
                 
                 const furosArray = data.u.split('-');
                 furosArray.forEach(uStr => {
