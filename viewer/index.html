@@ -94,7 +94,8 @@
         const pecaData = loadDataFromURL();
 
         if (pecaData) {
-            const hasCncLicense = pecaData.cnc === true;
+            // Considera licença ativa se o payload contiver dados de furos/usinagem ou recortes
+            const hasCncLicense = pecaData.cnc === true || (pecaData.u && pecaData.u.trim() !== "") || (pecaData.c && pecaData.c.length > 0);
             if (!hasCncLicense) {
                 pecaData.u = "";
                 pecaData.c = null;
