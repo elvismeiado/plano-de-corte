@@ -192,13 +192,19 @@
                 const shape = new THREE.Shape();
                 data.c.forEach((pts, index) => {
                     if (index === 0) {
-                        shape.moveTo(pts[0].x, pts[0].y);
-                        for(let i = 1; i < pts.length; i++) shape.lineTo(pts[i].x, pts[i].y);
+                        if (pts && pts.length > 0) {
+                            shape.moveTo(pts[0].x, pts[0].y);
+                            for(let i = 1; i < pts.length; i++) shape.lineTo(pts[i].x, pts[i].y);
+                            shape.closePath();
+                        }
                     } else {
-                        const holePath = new THREE.Path();
-                        holePath.moveTo(pts[0].x, pts[0].y);
-                        for(let j = 1; j < pts.length; j++) holePath.lineTo(pts[j].x, pts[j].y);
-                        shape.holes.push(holePath);
+                        if (pts && pts.length > 0) {
+                            const holePath = new THREE.Path();
+                            holePath.moveTo(pts[0].x, pts[0].y);
+                            for(let j = 1; j < pts.length; j++) holePath.lineTo(pts[j].x, pts[j].y);
+                            holePath.closePath();
+                            shape.holes.push(holePath);
+                        }
                     }
                 });
                 const extrudeSettings = { depth: esp, bevelEnabled: false };
@@ -222,15 +228,15 @@
                 const furosArray = data.u.split('-');
                 furosArray.forEach(uStr => {
                     if(!uStr) return;
-                    const match = uStr.match(/([A-Z])([A-Z])X([\d.]+)Y([\d.]+)Z([\d.]+)D([\d.]+)(?:C([\d.]+))?/);
+                    const match = uStr.match(/([A-Z])([A-Z])X([\d.]+)[yY]([\d.]+)(?:[zZ]([\d.]+))?(?:[dD]([\d.]+))?(?:[cC]([\d.]+))?/i);
                     if(match) {
-                        const tipo = match[1] === 'R' ? 'Rasgo' : 'Furo';
-                        const faceChar = match[2];
+                        const tipo = match[1].toUpperCase() === 'R' ? 'Rasgo' : 'Furo';
+                        const faceChar = match[2].toUpperCase();
                         const x = parseFloat(match[3]);
                         const y = parseFloat(match[4]);
-                        const z = parseFloat(match[5]); 
-                        const dia = parseFloat(match[6]);
-                        const compRasgo = match[7] ? parseFloat(match[7]) : dia;
+                        const z = match[5] ? parseFloat(match[5]) : 12; 
+                        const dia = match[6] ? parseFloat(match[6]) : (tipo === 'Rasgo' ? 6 : 8);
+                        const compRasgo = match[7] ? parseFloat(match[7]) : (tipo === 'Rasgo' ? 50 : dia);
 
                         let cx = x; let cy = y; let cz = (faceChar === 'T') ? (z/2) : (esp - (z/2));
 
